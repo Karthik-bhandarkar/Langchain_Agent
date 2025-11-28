@@ -5,66 +5,49 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
-# =========================
-# ENV LOADING
-# =========================
-
+# Load environment variables from .env file
 load_dotenv()
 
+# Retrieve API keys and DB URI from environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 MONGO_URI = os.getenv("MONGO_URI")
 
+# Ensure required environment variables exist
 if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY not found in .env")
 
 if not MONGO_URI:
     raise ValueError("MONGO_URI not found in .env")
 
-# =========================
-# MONGODB SETUP
-# =========================
-
+# Connect to MongoDB using provided URI
 client = MongoClient(MONGO_URI)
 db = client["agent_db"]
 
+# Collection to store chat conversations
 conversation_collection = db["conversations"]
 
-# =========================
-# LANGCHAIN IMPORTS
-# =========================
-
+# LangChain imports used for LLM, tools, memory, agent, prompts
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 from langchain.memory import ConversationBufferMemory
 from langchain.agents import create_openai_functions_agent, AgentExecutor
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-# =========================
-# FASTAPI APP
-# =========================
-
+# FastAPI application initialization
 app = FastAPI(title="AI Agent Backend (Auto Tool Selection)")
 
-# =========================
-# LLM SETUP
-# =========================
-
+# Create the ChatOpenAI model instance with deterministic behavior
 llm = ChatOpenAI(
     model="gpt-4o-mini",
     temperature=0,
     api_key=OPENAI_API_KEY,
 )
 
-# =========================
-# TOOLS (LLM WILL CHOOSE)
-# =========================
-
+# Tool: Generates positive, supportive messages for emotionally low users
 @tool
 def positive_prompt_tool(prompt: str) -> str:
     """
-    Use this tool when the user or their friend seems emotionally low, lonely,
-    stressed, sad, or in need of encouragement or motivation.
-    It should return a warm, supportive, and uplifting response.
+    Tool to generate warm and uplifting responses when emotional support is needed.
     """
     return (
         f"I hear that: '{prompt}'. "
@@ -73,25 +56,20 @@ def positive_prompt_tool(prompt: str) -> str:
         "Try reaching out to someone you trust, and be kind to yourself."
     )
 
-
+# Tool: Creates negative/exclusion-style prompts when explicitly requested
 @tool
 def negative_prompt_tool(prompt: str) -> str:
     """
-    Use this tool when the user explicitly asks for a negative prompt,
-    or to avoid/exclude something in an image or text generation prompt.
-    Return a negative-style or exclusion-style rewrite of the prompt.
+    Tool to rewrite the user's prompt in a negative or exclusion-style format.
     """
     return f"Negative/exclusion-style version of your idea: Avoid {prompt}."
 
-
+# Tool: Provides student marks based on a simple in-memory DB lookup
 @tool
 def student_marks_tool(query: str) -> str:
     """
-    Use this tool when the user is asking about a student's marks, score,
-    result, or grade in a specific subject.
-    It expects a free-form query mentioning the student's name and subject.
+    Tool that fetches marks/grades for a student and subject from a mock database.
     """
-
     STUDENT_MARKS_DB = {
         "Priya": {"English": 92, "Maths": 88, "Science": 95},
         "Amit": {"English": 78, "Maths": 81, "Science": 74},
@@ -103,28 +81,32 @@ def student_marks_tool(query: str) -> str:
     name = None
     subject = None
 
-    # rough auto-detection from text
+    # Detect student name from text
     for n in STUDENT_MARKS_DB.keys():
         if n.lower() in q:
             name = n
             break
 
+    # Detect subject from text
     for s in ["english", "maths", "science"]:
         if s in q:
             subject = s.capitalize()
             break
 
+    # Return guidance if name/subject not detected
     if not name or not subject:
         return (
             "I couldn't clearly detect the name and subject. "
             "Please include both, like: 'What are Priya's Science marks?'."
         )
 
+    # Ensure subject exists in student record
     if subject not in STUDENT_MARKS_DB[name]:
         return f"{name} has no marks stored for {subject}."
 
     marks = STUDENT_MARKS_DB[name][subject]
 
+    # Simple grade calculation
     if marks >= 90:
         grade = "A+"
     elif marks >= 80:
@@ -136,14 +118,11 @@ def student_marks_tool(query: str) -> str:
 
     return f"{name} scored {marks} in {subject} (Grade: {grade})."
 
-
+# Tool: Mandatory when detecting suicidal/self-harm intent
 @tool
 def suicide_related_tool(text: str) -> str:
     """
-    ALWAYS use this tool when the user expresses suicidal thoughts,
-    self-harm intent, or wants to end their life.
-    It must respond with a very safe, supportive message and
-    encourage contacting trusted people or professionals.
+    Tool that provides a safe, supportive response for suicidal or self-harm related messages.
     """
     return (
         "I'm really sorry you're feeling this way. "
@@ -154,7 +133,7 @@ def suicide_related_tool(text: str) -> str:
         "You are not alone."
     )
 
-
+# List of available tools for the agent to choose from
 tools = [
     positive_prompt_tool,
     negative_prompt_tool,
@@ -162,19 +141,13 @@ tools = [
     suicide_related_tool,
 ]
 
-# =========================
-# MEMORY
-# =========================
-
+# Conversation memory to store chat history in LangChain
 session_memory = ConversationBufferMemory(
     memory_key="chat_history",
     return_messages=True,
 )
 
-# =========================
-# AGENT SETUP
-# =========================
-
+# Prompt template defining system instructions and placeholders for memory
 prompt = ChatPromptTemplate.from_messages(
     [
         (
@@ -195,13 +168,14 @@ prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
+# Create the LangChain agent that uses OpenAI function calling
 agent = create_openai_functions_agent(
     llm=llm,
     tools=tools,
     prompt=prompt,
 )
 
-# IMPORTANT: return_intermediate_steps=True to see which tools were used
+# AgentExecutor orchestrates execution, tool selection, and memory usage
 main_agent = AgentExecutor(
     agent=agent,
     tools=tools,
@@ -210,10 +184,7 @@ main_agent = AgentExecutor(
     return_intermediate_steps=True,
 )
 
-# =========================
-# DB HELPERS
-# =========================
-
+# Save conversation entry to MongoDB
 def save_conversation(session_id: str, user_msg: str, ai_msg: str, tool_used: str):
     conversation_collection.insert_one(
         {
@@ -225,7 +196,7 @@ def save_conversation(session_id: str, user_msg: str, ai_msg: str, tool_used: st
         }
     )
 
-
+# Retrieve chat history from the database
 def get_history(session_id: str):
     history = (
         conversation_collection.find({"session_id": session_id}, {"_id": 0})
@@ -233,28 +204,20 @@ def get_history(session_id: str):
     )
     return list(history)
 
-
-# =========================
-# MAIN PIPELINE
-# =========================
-
+# Pipeline: Sends user input through the agent and logs tool usage
 def run_pipeline(user_input: str, session_id: str):
     """
-    Sends the user input to the LangChain agent.
-    The agent automatically decides whether to use tools or not.
-    We inspect intermediate_steps to see which tools were used.
+    Runs the LangChain agent on user input and logs tool usage.
     """
-
     try:
         result = main_agent.invoke({"input": user_input})
 
-        # final model output
+        # Extract final output
         response = result.get("output", "")
 
-        # detect tool used from intermediate steps (if any)
+        # Detect last tool used if any intermediate steps exist
         intermediate_steps = result.get("intermediate_steps", [])
         if intermediate_steps:
-            # each step is (AgentAction, tool_output)
             last_action = intermediate_steps[-1][0]
             tool_used = getattr(last_action, "tool", "unknown_tool")
         else:
@@ -264,24 +227,17 @@ def run_pipeline(user_input: str, session_id: str):
         response = f"Agent Error: {str(e)}"
         tool_used = "error"
 
+    # Persist chat entry
     save_conversation(session_id, user_input, response, tool_used)
 
     return response, tool_used
 
-
-# =========================
-# API MODELS
-# =========================
-
+# Request model for chat endpoint
 class ChatRequest(BaseModel):
     session_id: str
     message: str
 
-
-# =========================
-# ROUTES
-# =========================
-
+# API route: Chat endpoint using agent pipeline
 @app.post("/chat")
 async def chat(req: ChatRequest):
     response, tool_used = run_pipeline(req.message, req.session_id)
@@ -291,22 +247,22 @@ async def chat(req: ChatRequest):
         "timestamp": datetime.utcnow().isoformat(),
         "user": req.message,
         "response": response,
-        "route_selected": tool_used,  # this is what Streamlit shows as Tool
+        "route_selected": tool_used,
     }
 
-
+# API route: Fetch stored conversation history
 @app.get("/history/{session_id}")
 async def fetch_history(session_id: str):
     history = get_history(session_id)
     return {"session_id": session_id, "history": history}
 
-
+# API route: Delete all conversation entries for a session
 @app.delete("/reset-history/{session_id}")
 async def reset_history(session_id: str):
     conversation_collection.delete_many({"session_id": session_id})
     return {"status": f"Session {session_id} history reset successfully"}
 
-
+# Root endpoint returning simple status message
 @app.get("/")
 def home():
     return {"status": "AI Agent Backend (Auto Tool Selection) Running ✅"}
