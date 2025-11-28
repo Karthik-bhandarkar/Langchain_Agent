@@ -12,4 +12,3 @@ langchain-community
 langchain-core
 
 pymongo[srv]
->>>>>>> dd77fef (Your update message)
