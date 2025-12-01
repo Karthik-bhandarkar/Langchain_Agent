@@ -39,10 +39,8 @@ requirements.txt    # Dependencies
 README.md           # Documentation  
 
 ## System Architecture
-## Flowchart Diagram
 
-![Flowchart](assets/Flow chart.png)
-
+![System Flowchart](assets/flowchart.png)
 
 
 ## Tech Stack
