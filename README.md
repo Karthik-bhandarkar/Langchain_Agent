@@ -40,7 +40,9 @@ README.md           # Documentation
 
 ## System Architecture
 
+
 ![System Flowchart](assets/flowchart.png)
+
 
 
 ## Tech Stack
