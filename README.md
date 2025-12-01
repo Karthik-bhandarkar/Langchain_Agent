@@ -39,73 +39,11 @@ requirements.txt    # Dependencies
 README.md           # Documentation  
 
 ## System Architecture
+## Flowchart Diagram
 
-This project follows a simple but powerful architecture using FastAPI, LangChain, MongoDB, and Streamlit. Each component has a specific role, and together they form a complete AI Agent system.
+![Flowchart](assets/Flow chart.png)
 
-### 1. Client Layer (Frontend – Streamlit)
-- Provides a chat interface for the user.
-- Generates a unique `session_id` for each conversation.
-- Sends user messages to the FastAPI backend.
-- Displays:
-  - AI responses
-  - Tool selected by the agent
-  - Conversation timestamps
-  - Session history
-- Can reset conversation history through backend API calls.
 
-### 2. API Layer (Backend – FastAPI)
-- Exposes REST endpoints:
-  - `/chat` → main agent endpoint
-  - `/history/{session_id}` → fetch previous messages
-  - `/reset-history/{session_id}` → delete session messages
-- Receives JSON input from Streamlit or Postman.
-- Validates requests using Pydantic models.
-- Passes user input to the agent pipeline.
-- Returns structured JSON responses to clients.
-
-### 3. Agent Layer (LangChain + OpenAI Functions)
-- Core intelligence of the system.
-- Uses the OpenAI GPT model with function-calling.
-- Routing logic is implemented inside the system prompt.
-- Agent decides:
-  - Whether a tool is needed
-  - Which tool to pick
-  - How to combine tool output with its own reasoning
-- Supported tools:
-  - Marks tool
-  - Positive support tool
-  - Negative/exclusion tool
-  - Safety tool for self-harm related content
-
-### 4. Memory Layer (MongoDB)
-- Stores all conversations in the `conversations` collection.
-- Each stored entry contains:
-  - `session_id`
-  - `user` message
-  - `assistant` response
-  - `tool_used`
-  - `timestamp`
-- Allows:
-  - Restoring past chat history
-  - Session persistence
-  - Realtime display on Streamlit UI
-
-### 5. Execution Flow Summary
-1. User sends a message from Streamlit.
-2. FastAPI receives the message via `/chat`.
-3. Backend sends the message to the LangChain agent.
-4. Agent selects the correct tool based on the system prompt.
-5. Tool executes (if needed) and returns data.
-6. Agent constructs final response.
-7. Backend stores the full interaction in MongoDB.
-8. Backend returns the response + tool used.
-9. Streamlit displays the result to the user.
-
-This architecture ensures a clean separation of concerns:  
-- UI logic in Streamlit  
-- Conversation routing + reasoning in LangChain  
-- Persistent storage in MongoDB  
-- API communication through FastAPI  
 
 ## Tech Stack
 
